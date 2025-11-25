@@ -13,10 +13,17 @@ import (
 
 // PackageJSON represents the minimal structure we need from package.json
 type PackageJSON struct {
-	Name string `json:"name"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
-// loadIOCs reads the IOC file and returns a set of package names
+// IOCEntry represents a package name and version pair
+type IOCEntry struct {
+	Name    string
+	Version string
+}
+
+// loadIOCs reads the IOC file and returns a map of package entries (name,version -> true)
 func loadIOCs(iocPath string) (map[string]bool, error) {
 	file, err := os.Open(iocPath)
 	if err != nil {
@@ -26,11 +33,32 @@ func loadIOCs(iocPath string) (map[string]bool, error) {
 
 	iocs := make(map[string]bool)
 	scanner := bufio.NewScanner(file)
+	lineNum := 0
 	for scanner.Scan() {
+		lineNum++
 		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			iocs[line] = true
+		if line == "" {
+			continue
 		}
+
+		// Parse format: package-name,version
+		parts := strings.Split(line, ",")
+		if len(parts) != 2 {
+			fmt.Fprintf(os.Stderr, "Warning: invalid format at line %d: %s\n", lineNum, line)
+			continue
+		}
+
+		name := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+
+		if name == "" || version == "" {
+			fmt.Fprintf(os.Stderr, "Warning: empty name or version at line %d: %s\n", lineNum, line)
+			continue
+		}
+
+		// Store as "name,version" key for easy lookup
+		key := fmt.Sprintf("%s,%s", name, version)
+		iocs[key] = true
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -93,10 +121,13 @@ func scanDirectory(dirPath string, iocs map[string]bool) ([]string, error) {
 			return nil
 		}
 
-		// Check if package name matches any IOC
-		if pkg.Name != "" && iocs[pkg.Name] {
-			packageDir := filepath.Dir(path)
-			matches = append(matches, fmt.Sprintf("[MATCH] %s: %s", pkg.Name, packageDir))
+		// Check if package name and version matches any IOC
+		if pkg.Name != "" && pkg.Version != "" {
+			key := fmt.Sprintf("%s,%s", pkg.Name, pkg.Version)
+			if iocs[key] {
+				packageDir := filepath.Dir(path)
+				matches = append(matches, fmt.Sprintf("[MATCH] %s@%s: %s", pkg.Name, pkg.Version, packageDir))
+			}
 		}
 
 		return nil
