@@ -17,12 +17,6 @@ type PackageJSON struct {
 	Version string `json:"version"`
 }
 
-// IOCEntry represents a package name and version pair
-type IOCEntry struct {
-	Name    string
-	Version string
-}
-
 // loadIOCs reads the IOC file and returns a map of package entries (name,version -> true)
 func loadIOCs(iocPath string) (map[string]bool, error) {
 	file, err := os.Open(iocPath)
