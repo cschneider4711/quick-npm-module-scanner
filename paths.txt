@@ -1,0 +1,82 @@
+# NPM/Node.js module paths to scan
+# Lines starting with # are comments
+# Glob patterns (*) are supported
+# Environment variables (%VAR% on Windows, $VAR on Unix) are expanded
+
+# === Main paths ===
+/usr/local/lib/node_modules/
+/opt/homebrew/lib/node_modules/
+/usr/local/Cellar/node/*/lib/node_modules/
+
+# === Windows paths ===
+C:\Program Files\nodejs\
+C:\Program Files\nodejs\node_modules\
+C:\Program Files (x86)\Jenkins\workspace\
+C:\Users\Jenkins\.npm\
+C:\Users\Jenkins\.cache\npm\
+C:\Users\runneradmin\AppData\Roaming\npm\
+C:\Users\VssAdministrator\AppData\Roaming\npm\
+C:\Windows\System32\config\systemprofile\AppData\Roaming\npm\
+
+# === Windows paths with environment variables ===
+%USERPROFILE%\AppData\Roaming\npm\
+%USERPROFILE%\AppData\Roaming\npm-cache\
+%LOCALAPPDATA%\Yarn\cache\
+%LOCALAPPDATA%\Yarn\Data\
+%LOCALAPPDATA%\Yarn\global\node_modules\
+%LOCALAPPDATA%\pnpm\
+%LOCALAPPDATA%\Corepack\cache\
+%LOCALAPPDATA%\Corepack\npm\
+
+# === macOS/Linux system paths ===
+/usr/lib/node_modules/
+/usr/local/bin/
+/opt/homebrew/bin/
+/Library/Frameworks/Node.framework/Versions/
+/Library/Caches/Yarn/
+
+# === macOS user paths (glob for all users) ===
+/Users/*/.npm/
+/Users/*/.npm/_cacache/
+/Users/*/.npm-packages/
+/Users/*/.config/npm/
+/Users/*/.config/yarn/global/node_modules/
+/Users/*/Library/Caches/Yarn/
+/Users/*/Library/pnpm/
+/Users/*/.local/share/pnpm/
+/Users/*/.local/share/corepack/
+
+# === Linux user paths (glob for all users) ===
+/home/*/.npm/
+/home/*/.npm/_cacache/
+/home/*/.npm-packages/
+/home/*/.config/npm/
+/home/*/.cache/yarn/
+/home/*/.config/yarn/global/node_modules/
+/home/*/.local/share/pnpm/
+/home/*/.cache/pnpm/
+
+# === Jenkins CI paths ===
+/var/lib/jenkins/.npm/
+/var/lib/jenkins/.cache/npm/
+/var/lib/jenkins/.cache/yarn/
+/var/lib/jenkins/.local/share/pnpm/
+/var/lib/jenkins/workspace/
+
+# === GitHub Actions runner paths ===
+/home/runner/.npm/
+/home/runner/.cache/npm/
+/home/runner/.cache/yarn/
+/home/runner/.local/share/pnpm/
+/home/runner/work/
+
+# === GitLab runner paths ===
+/home/gitlab-runner/.npm/
+/home/gitlab-runner/.cache/npm/
+/home/gitlab-runner/.local/share/pnpm/
+/builds/
+
+# === Azure DevOps paths ===
+/home/vsts/.npm/
+/home/vsts/.cache/npm/
+/home/vsts/work/

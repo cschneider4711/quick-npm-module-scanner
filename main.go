@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -62,8 +64,114 @@ func loadIOCs(iocPath string) (map[string]bool, error) {
 	return iocs, nil
 }
 
-// getGlobalNPMDirectories returns the default macOS global npm directories
-func getGlobalNPMDirectories() []string {
+// expandEnvVars expands environment variables in a path
+// Supports both %VAR% (Windows) and $VAR or ${VAR} (Unix) syntax
+func expandEnvVars(path string) string {
+	// First expand Unix-style variables using os.ExpandEnv
+	result := os.ExpandEnv(path)
+
+	// Then expand Windows-style %VAR% variables
+	re := regexp.MustCompile(`%([^%]+)%`)
+	result = re.ReplaceAllStringFunc(result, func(match string) string {
+		varName := strings.Trim(match, "%")
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return match // Keep original if not found
+	})
+
+	return result
+}
+
+// expandGlobPath expands glob patterns in a path and returns all matching paths
+func expandGlobPath(path string) []string {
+	// First expand environment variables
+	expandedPath := expandEnvVars(path)
+
+	// Clean the path (normalize separators)
+	expandedPath = filepath.Clean(expandedPath)
+
+	// Check if path contains glob patterns
+	if !strings.Contains(expandedPath, "*") && !strings.Contains(expandedPath, "?") {
+		return []string{expandedPath}
+	}
+
+	// Use filepath.Glob to expand
+	matches, err := filepath.Glob(expandedPath)
+	if err != nil || len(matches) == 0 {
+		// Return original path if glob fails or no matches
+		return []string{expandedPath}
+	}
+
+	return matches
+}
+
+// isPathForCurrentOS checks if a path is intended for the current OS
+func isPathForCurrentOS(path string) bool {
+	isWindows := runtime.GOOS == "windows"
+
+	// Check for definitive OS-specific patterns
+	// Leading "/" is a definitive Unix absolute path indicator
+	isDefinitelyUnix := strings.HasPrefix(path, "/")
+
+	// Drive letter (e.g., "C:") is a definitive Windows path indicator
+	isDefinitelyWindows := len(path) >= 2 && path[1] == ':'
+
+	// Definitive indicators take priority - reject paths clearly meant for other OS
+	if isWindows {
+		// On Windows, reject paths that definitively start with Unix root
+		if isDefinitelyUnix {
+			return false
+		}
+		// Accept Windows paths or ambiguous paths (relative, env vars only, etc.)
+		return true
+	}
+
+	// On Unix, reject paths that have Windows drive letters
+	if isDefinitelyWindows {
+		return false
+	}
+	// Accept Unix paths or ambiguous paths
+	return true
+}
+
+// loadPathsFromFile reads scan paths from a file
+func loadPathsFromFile(pathsFile string) ([]string, error) {
+	file, err := os.Open(pathsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open paths file: %w", err)
+	}
+	defer file.Close()
+
+	var paths []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Skip paths not intended for current OS
+		if !isPathForCurrentOS(line) {
+			continue
+		}
+
+		// Expand glob patterns (which also expands env vars)
+		expandedPaths := expandGlobPath(line)
+		paths = append(paths, expandedPaths...)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read paths file: %w", err)
+	}
+
+	return paths, nil
+}
+
+// getDefaultPaths returns fallback paths if no paths file is found
+func getDefaultPaths() []string {
 	dirs := []string{
 		"/usr/local/lib/node_modules",
 		"/opt/homebrew/lib/node_modules",
@@ -137,14 +245,17 @@ func scanDirectory(dirPath string, iocs map[string]bool) ([]string, error) {
 func main() {
 	// Define command-line flags
 	iocPath := flag.String("ioc", "ioc.txt", "Path to IOC file")
-	scanGlobal := flag.Bool("global", true, "Scan global npm directories")
+	pathsFile := flag.String("paths", "paths.txt", "Path to file containing scan paths")
+	scanGlobal := flag.Bool("global", true, "Scan paths from paths file (or default paths if file not found)")
 	flag.Parse()
+
+	fmt.Println("Exit codes: 0 = no matches found, 1 = matches found, 2 = no scan due to misconfiguration, -1 = error")
 
 	// Load IOCs
 	iocs, err := loadIOCs(*iocPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading IOCs: %v\n", err)
-		os.Exit(1)
+		os.Exit(2)
 	}
 
 	fmt.Printf("Loaded %d IOCs from %s\n", len(iocs), *iocPath)
@@ -152,18 +263,40 @@ func main() {
 	// Collect directories to scan
 	var dirsToScan []string
 
-	// Add global directories if requested
+	// Add directories from paths file if requested
 	if *scanGlobal {
-		dirsToScan = append(dirsToScan, getGlobalNPMDirectories()...)
+		paths, err := loadPathsFromFile(*pathsFile)
+		if err != nil {
+			fmt.Printf("Warning: Could not load paths from %s: %v\n", *pathsFile, err)
+			fmt.Println("Using default paths...")
+			dirsToScan = append(dirsToScan, getDefaultPaths()...)
+		} else {
+			fmt.Printf("Loaded %d paths from %s\n", len(paths), *pathsFile)
+			dirsToScan = append(dirsToScan, paths...)
+		}
 	}
 
 	// Add additional directories from command-line arguments
 	additionalPaths := flag.Args()
-	dirsToScan = append(dirsToScan, additionalPaths...)
+	for _, p := range additionalPaths {
+		expanded := expandGlobPath(p)
+		dirsToScan = append(dirsToScan, expanded...)
+	}
+
+	// Remove duplicates
+	seen := make(map[string]bool)
+	var uniqueDirs []string
+	for _, dir := range dirsToScan {
+		if !seen[dir] {
+			seen[dir] = true
+			uniqueDirs = append(uniqueDirs, dir)
+		}
+	}
+	dirsToScan = uniqueDirs
 
 	if len(dirsToScan) == 0 {
 		fmt.Println("No directories to scan. Use -global flag or provide paths as arguments.")
-		os.Exit(0)
+		os.Exit(2)
 	}
 
 	// Scan each directory
@@ -190,5 +323,7 @@ func main() {
 		for _, match := range allMatches {
 			fmt.Println(match)
 		}
+		os.Exit(1)
 	}
+	os.Exit(0)
 }
